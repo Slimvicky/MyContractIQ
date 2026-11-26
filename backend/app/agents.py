@@ -93,7 +93,7 @@ def rate_agent():
     return Agent(
         _model(),
         output_type=RateRecommendation,
-        capabilities=[WebSearch(search_context_size="medium", max_uses=5)],
+        capabilities=[WebSearch(search_context_size="medium")],
         instructions=(
             "You are a procurement analyst for small businesses. Use web search to find current, "
             "real market pricing for the product or service in the contract and compare it to what "
