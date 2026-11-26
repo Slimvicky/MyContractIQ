@@ -10,6 +10,15 @@ export interface User {
   email: string
   business_name: string
   business_type: string
+  calendar_pref: 'unset' | 'all' | 'none'
+}
+
+/** Returned for newly added contracts so the app can offer "add to calendar?" for non-expired ones. */
+export interface NewContractRef {
+  id: number
+  name: string
+  end_date: string | null
+  upcoming: boolean
 }
 
 export interface Alternative {
@@ -137,6 +146,15 @@ export interface Meta {
   rate_check_window_days: number
 }
 
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
+
 const TOKEN_KEY = 'mycontractiq_token'
 export const getToken = () => localStorage.getItem(TOKEN_KEY)
 export const setToken = (t: string | null) =>
@@ -219,11 +237,16 @@ export const api = {
     const fd = new FormData()
     files.forEach((f) => fd.append('files', f))
     return json<{
-      created: { id: number; name: string; source: string; needs_review: boolean }[]
+      created: (NewContractRef & { source: string; needs_review: boolean })[]
       errors: { file: string; error: string }[]
     }>('/contracts/bulk', { method: 'POST', body: fd })
   },
-  loadSample: () => json<{ created: number }>('/contracts/sample', { method: 'POST' }),
+  loadSample: () => json<{ created: number; contracts: NewContractRef[] }>('/contracts/sample', { method: 'POST' }),
+  setCalendarPreference: (choice: 'all' | 'none') =>
+    json<{ calendar_pref: 'all' | 'none'; feed_url: string | null }>('/calendar/preference', {
+      method: 'POST',
+      body: JSON.stringify({ choice }),
+    }),
 
   rateCheck: (id: number, force = false) => json<RateCheck>(`/contracts/${id}/rate-check?force=${force}`, { method: 'POST' }),
   runDueRateChecks: () =>
@@ -235,12 +258,12 @@ export const api = {
   // Downloads need the auth header, so they are fetched as blobs.
   downloadCalendar: async (contractId?: number) => {
     const res = await raw(contractId ? `/contracts/${contractId}/calendar.ics` : '/calendar.ics')
-    const url = URL.createObjectURL(await res.blob())
-    const a = document.createElement('a')
-    a.href = url
-    a.download = contractId ? `contract_${contractId}.ics` : 'mycontractiq_dates.ics'
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(url), 5000)
+    saveBlob(await res.blob(), contractId ? `contract_${contractId}.ics` : 'mycontractiq_dates.ics')
+  },
+  downloadCalendarFor: async (ids: number[]) => {
+    if (ids.length === 1) return api.downloadCalendar(ids[0])
+    const res = await raw(`/calendar.ics?ids=${ids.join(',')}`)
+    saveBlob(await res.blob(), 'mycontractiq_new_contracts.ics')
   },
   downloadTemplate: async () => {
     const res = await raw('/templates/contracts.csv')

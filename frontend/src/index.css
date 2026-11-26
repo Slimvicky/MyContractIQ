@@ -332,3 +332,16 @@ optgroup { color: var(--brand-300); }
   .nav-right { margin-left: auto; }
 }
 .tab { white-space: nowrap; }
+
+/* ---------- modals ---------- */
+.modal-backdrop { position: fixed; inset: 0; z-index: 50; background: rgba(10, 12, 14, 0.62); backdrop-filter: blur(3px); display: grid; place-items: center; padding: 20px; animation: fade 0.15s ease-out; }
+.modal { position: relative; width: 100%; max-width: 480px; margin: 0; padding: 28px; display: flex; flex-direction: column; gap: 10px; border-color: rgba(34, 211, 238, 0.4); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+.modal h2 { font-size: 1.3rem; display: block; }
+.modal .btn-block { margin-top: 4px; }
+.modal-close { position: absolute; top: 12px; right: 12px; }
+.modal-icon { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; background: rgba(34, 211, 238, 0.15); color: var(--brand-400); }
+.modal-icon.good { background: rgba(52, 211, 153, 0.15); color: var(--revenue); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+.modal-list { list-style: none; padding: 0; margin: 4px 0; display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.modal-list li { display: flex; justify-content: space-between; gap: 10px; background: var(--surface-2); padding: 6px 10px; border-radius: 7px; font-size: 0.88rem; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }

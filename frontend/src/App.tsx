@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
+import { SignupCalendarPrompt } from './components/CalendarPrompts'
 import NavBar from './components/NavBar'
 import { Spinner } from './components/ui'
 import AboutUs from './pages/AboutUs'
@@ -29,6 +30,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <NavBar />
+        <SignupCalendarPrompt />
         <main className="container">
           <Routes>
             <Route path="/" element={<Protected><OverviewPage /></Protected>} />

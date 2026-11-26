@@ -87,3 +87,10 @@ def get_conn() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        # migrations for databases created before these columns existed
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+        if "calendar_pref" not in cols:
+            # 'unset' = not asked yet, 'all' = subscribed to all contracts, 'none' = declined
+            conn.execute("ALTER TABLE users ADD COLUMN calendar_pref TEXT NOT NULL DEFAULT 'unset'")
+        if "calendar_feed_hash" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN calendar_feed_hash TEXT")

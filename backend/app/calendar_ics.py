@@ -32,7 +32,8 @@ def _event(uid: str, day: date, summary: str, description: str, alarm_days: int 
 
 def build_ics(contracts: list[dict]) -> str:
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//MyContractIQ//Contracts//EN",
-             "CALSCALE:GREGORIAN", "X-WR-CALNAME:MyContractIQ contract dates"]
+             "CALSCALE:GREGORIAN", "X-WR-CALNAME:MyContractIQ contract dates",
+             "REFRESH-INTERVAL;VALUE=DURATION:PT6H", "X-PUBLISHED-TTL:PT6H"]
     for c in contracts:
         if not c.get("end_date"):
             continue

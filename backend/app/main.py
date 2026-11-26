@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal, Optional
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -93,7 +93,15 @@ def current_user(authorization: str = Header(default="")) -> dict:
 
 
 def _public_user(u: dict) -> dict:
-    return {k: u[k] for k in ("id", "first_name", "last_name", "email", "business_name", "business_type")}
+    out = {k: u[k] for k in ("id", "first_name", "last_name", "email", "business_name", "business_type")}
+    out["calendar_pref"] = u.get("calendar_pref") or "unset"
+    return out
+
+
+def _calendar_info(end_date) -> dict:
+    """Lets the frontend ask 'add to calendar?' only for contracts that have not expired."""
+    end = _iso(end_date)
+    return {"end_date": end, "upcoming": bool(end) and end >= date.today().isoformat()}
 
 
 def _start_session(user_id: int) -> str:
@@ -411,7 +419,8 @@ async def bulk_upload(files: list[UploadFile] = File(...), user: dict = Depends(
                         }.items() if v not in ("", None)})
                         with get_conn() as conn:
                             cid = _insert_contract(conn, user["id"], body.model_dump())
-                        created.append({"id": cid, "name": body.name, "source": f"{name} row {i}", "needs_review": False})
+                        created.append({"id": cid, "name": body.name, "source": f"{name} row {i}", "needs_review": False,
+                                        **_calendar_info(body.end_date)})
                     except Exception as e:
                         errors.append({"file": f"{name} row {i}", "error": str(e).split("\n")[0][:200]})
                 continue
@@ -430,7 +439,8 @@ async def bulk_upload(files: list[UploadFile] = File(...), user: dict = Depends(
             with get_conn() as conn:
                 cid = _insert_contract(conn, user["id"], record, needs_review=bool(missing))
                 _store_file(conn, user["id"], cid, data, name)
-            created.append({"id": cid, "name": record["name"], "source": name, "needs_review": bool(missing)})
+            created.append({"id": cid, "name": record["name"], "source": name, "needs_review": bool(missing),
+                            **_calendar_info(record["end_date"])})
         except HTTPException as e:
             errors.append({"file": name, "error": e.detail})
         except HarnessError as e:
@@ -472,13 +482,15 @@ def load_sample(user: dict = Depends(current_user)):
         ("Client service agreement – Bloom Florist", "Bloom Florist", "revenue", "Client Services", 9600,
          d(-60), d(300), 30, True, "Quarterly tax prep and bookkeeping"),
     ]
+    created = []
     with get_conn() as conn:
         for (n, cp, lt, cat, v, s, e, nd, ar, sc) in samples:
-            _insert_contract(conn, user["id"], {"name": n, "counterparty": cp, "line_type": lt, "category": cat,
-                                                "annual_value": v, "start_date": s, "end_date": e, "notice_days": nd,
-                                                "auto_renew": ar, "scope": sc, "owner": user["first_name"]})
+            cid = _insert_contract(conn, user["id"], {"name": n, "counterparty": cp, "line_type": lt, "category": cat,
+                                                      "annual_value": v, "start_date": s, "end_date": e, "notice_days": nd,
+                                                      "auto_renew": ar, "scope": sc, "owner": user["first_name"]})
+            created.append({"id": cid, "name": n, **_calendar_info(e)})
     audit.record("sample_data_loaded", user["id"], count=len(samples))
-    return {"created": len(samples)}
+    return {"created": len(samples), "contracts": created}
 
 
 # ------------------------------------------------------------------ rate agent
@@ -656,9 +668,13 @@ def portfolio_latest(user: dict = Depends(current_user)):
 
 
 @app.get("/api/calendar.ics")
-def calendar_all(user: dict = Depends(current_user)):
+def calendar_all(ids: Optional[str] = None, user: dict = Depends(current_user)):
+    """All contracts, or only the comma-separated `ids` (used right after a bulk upload)."""
     cs = _list_contracts(user["id"])
-    audit.record("calendar_export", user["id"], contracts=len(cs))
+    if ids:
+        wanted = {int(i) for i in ids.split(",") if i.strip().isdigit()}
+        cs = [c for c in cs if c["id"] in wanted]
+    audit.record("calendar_export", user["id"], contracts=len(cs), subset=bool(ids))
     return Response(build_ics(cs), media_type="text/calendar",
                     headers={"Content-Disposition": 'attachment; filename="mycontractiq_dates.ics"'})
 
@@ -670,6 +686,37 @@ def calendar_one(cid: int, user: dict = Depends(current_user)):
     audit.record("calendar_export", user["id"], contract_id=cid)
     return Response(build_ics([c]), media_type="text/calendar",
                     headers={"Content-Disposition": f'attachment; filename="contract_{cid}.ics"'})
+
+
+class CalendarPrefIn(BaseModel):
+    choice: Literal["all", "none"]
+
+
+def _feed_url(request: Request, token: str) -> str:
+    return str(request.base_url).rstrip("/") + f"/api/calendar/feed/{token}.ics"
+
+
+@app.post("/api/calendar/preference")
+def calendar_preference(body: CalendarPrefIn, request: Request, user: dict = Depends(current_user)):
+    """Answer to the sign-up question: add all contracts to my calendar (subscription feed) or not."""
+    token = new_session_token() if body.choice == "all" else None
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET calendar_pref = ?, calendar_feed_hash = ? WHERE id = ?",
+                     (body.choice, token_digest(token) if token else None, user["id"]))
+    audit.record("calendar_preference", user["id"], choice=body.choice)
+    return {"calendar_pref": body.choice, "feed_url": _feed_url(request, token) if token else None}
+
+
+@app.get("/api/calendar/feed/{token}.ics", include_in_schema=False)
+def calendar_feed(token: str):
+    """Private, unguessable subscription URL. Calendar apps poll it, so new contracts appear automatically."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT id FROM users WHERE calendar_feed_hash = ? AND calendar_pref = 'all'",
+                           (token_digest(token),)).fetchone()
+    if not row:
+        raise HTTPException(404, "Calendar feed not found.")
+    return Response(build_ics(_list_contracts(row["id"])), media_type="text/calendar",
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/audit/verify")

@@ -1,7 +1,8 @@
 import { useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CheckCircle2, Download, FilePlus2, Files, Sparkles, UploadCloud, Wand2, XCircle } from 'lucide-react'
-import { api, type ContractInput } from '../api'
+import { api, type ContractInput, type NewContractRef } from '../api'
+import { AddToCalendarPrompt } from '../components/CalendarPrompts'
 import ContractForm, { BLANK } from '../components/ContractForm'
 import { ErrorBox, PageHeader, Spinner } from '../components/ui'
 import { sourceLabel } from '../format'
@@ -52,6 +53,7 @@ function Bulk() {
   const [result, setResult] = useState<BulkResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sampleMsg, setSampleMsg] = useState<string | null>(null)
+  const [askCalendar, setAskCalendar] = useState<NewContractRef[] | null>(null)
 
   const add = (fs: File[]) => {
     const ok = fs.filter((f) => /\.(pdf|csv)$/i.test(f.name))
@@ -63,8 +65,10 @@ function Bulk() {
     setBusy(true)
     setError(null)
     try {
-      setResult(await api.bulkUpload(files))
+      const r = await api.bulkUpload(files)
+      setResult(r)
       setFiles([])
+      if (r.created.some((c) => c.upcoming)) setAskCalendar(r.created)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -74,6 +78,7 @@ function Bulk() {
 
   return (
     <div className="upload-grid">
+      {askCalendar && <AddToCalendarPrompt contracts={askCalendar} onDone={() => setAskCalendar(null)} />}
       <section className="card">
         <DropZone multiple accept=".pdf,.csv,application/pdf,text/csv" onFiles={add}>
           <UploadCloud size={36} />
@@ -130,6 +135,7 @@ function Bulk() {
           onClick={async () => {
             const r = await api.loadSample()
             setSampleMsg(`${r.created} sample contracts added.`)
+            if (r.contracts.some((c) => c.upcoming)) setAskCalendar(r.contracts)
           }}
         >
           Load sample contracts
@@ -147,6 +153,7 @@ function Single() {
   const [extracting, setExtracting] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState<NewContractRef | null>(null)
 
   const autofill = async (fs: File[]) => {
     const f = fs[0]
@@ -169,14 +176,17 @@ function Single() {
 
   return (
     <div className="upload-grid">
+      {saved && <AddToCalendarPrompt contracts={[saved]} onDone={() => navigate(`/contracts?id=${saved.id}`)} />}
       <section className="card">
         <ContractForm
           initial={initial}
           submitLabel="Save contract"
           onSubmit={async (c) => {
-            const saved = await api.createContract(c)
-            if (file) await api.attachFile(saved.id, file)
-            navigate(`/contracts?id=${saved.id}`)
+            const created = await api.createContract(c)
+            if (file) await api.attachFile(created.id, file)
+            const upcoming = !!created.end_date && (created.days_to_end ?? -1) >= 0
+            if (upcoming) setSaved({ id: created.id, name: created.name, end_date: created.end_date, upcoming })
+            else navigate(`/contracts?id=${created.id}`) // expired or no end date: nothing to add to a calendar
           }}
         />
       </section>

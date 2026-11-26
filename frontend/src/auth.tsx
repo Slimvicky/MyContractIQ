@@ -6,6 +6,7 @@ interface AuthState {
   loading: boolean
   signIn: (token: string, user: User) => void
   signOut: () => Promise<void>
+  updateUser: (patch: Partial<User>) => void
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -43,7 +44,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
-  return <AuthContext.Provider value={{ user, loading, signIn, signOut }}>{children}</AuthContext.Provider>
+  const updateUser = useCallback((patch: Partial<User>) => setUser((u) => (u ? { ...u, ...patch } : u)), [])
+
+  return <AuthContext.Provider value={{ user, loading, signIn, signOut, updateUser }}>{children}</AuthContext.Provider>
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
