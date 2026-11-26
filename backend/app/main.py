@@ -572,7 +572,7 @@ def _actions(contracts: list[dict]) -> list[dict]:
             r = rc["result"]
             label = {"switch": "Switch provider", "renegotiate": "Renegotiate", "raise_price": "Raise price"}[r["recommendation"]]
             acts.append({**base, "type": "recommendation", "priority": "high" if r["estimated_annual_impact"] > 1000 else "medium",
-                         "due_date": c["notice_deadline"] or c["end_date"], "title": f"{label}: ~${r['estimated_annual_impact']:,.0f}/yr",
+                         "due_date": c["notice_deadline"] if dtn is not None and dtn >= 0 else c["end_date"], "title": f"{label}: ~${r['estimated_annual_impact']:,.0f}/yr",
                          "detail": r["summary"]})
         if c["needs_review"]:
             acts.append({**base, "type": "review", "priority": "low", "due_date": None,
