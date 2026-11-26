@@ -14,9 +14,11 @@ import asyncio
 import re
 import time
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
-from . import audit
+from . import audit, config
+from .db import get_conn
 
 INJECTION_PATTERNS = [
     r"ignore (all |any )?(previous|prior|above|earlier) (instructions|prompts?|rules)",
@@ -65,6 +67,43 @@ def fence(label: str, text: str | None, max_chars: int = 12000) -> tuple[str, in
     return f'<untrusted_data source="{label}">\n{s.text}\n</untrusted_data>', s.flags
 
 
+class BudgetExceeded(HarnessError):
+    """Raised before calling the model when a spending cap has been reached."""
+
+
+def _today() -> str:
+    return date.today().isoformat()
+
+
+def check_budget(user_id: int | None) -> None:
+    """Spending guard: per-user run and token caps per day, plus a global daily token cap."""
+    with get_conn() as conn:
+        g = conn.execute("SELECT COALESCE(SUM(input_tokens + output_tokens), 0) t FROM agent_usage WHERE day = ?",
+                         (_today(),)).fetchone()["t"]
+        if g >= config.DAILY_TOKENS_GLOBAL:
+            raise BudgetExceeded("The app's daily AI budget has been reached. Estimates are shown until tomorrow.")
+        if user_id is None:
+            return
+        u = conn.execute("SELECT COUNT(*) n, COALESCE(SUM(input_tokens + output_tokens), 0) t FROM agent_usage "
+                         "WHERE day = ? AND user_id = ?", (_today(), user_id)).fetchone()
+    if u["n"] >= config.DAILY_AGENT_RUNS_PER_USER or u["t"] >= config.DAILY_TOKENS_PER_USER:
+        raise BudgetExceeded("You've reached today's AI usage limit for your account. Estimates are shown until tomorrow.")
+
+
+def _measure(result: Any) -> dict:
+    u = result.usage
+    searches = 0
+    for msg in result.all_messages():
+        for part in getattr(msg, "parts", []):
+            if getattr(part, "part_kind", "") == "builtin-tool-call" and "search" in str(getattr(part, "tool_name", "")):
+                searches += 1
+    inp, cached, out = u.input_tokens or 0, u.cache_read_tokens or 0, u.output_tokens or 0
+    cost = ((inp - cached) * config.PRICE_INPUT_PER_M + cached * config.PRICE_CACHED_INPUT_PER_M
+            + out * config.PRICE_OUTPUT_PER_M) / 1e6 + searches * config.PRICE_WEB_SEARCH_CALL
+    return {"input_tokens": inp, "cached_tokens": cached, "output_tokens": out, "requests": u.requests,
+            "web_searches": searches, "cost_usd": round(cost, 6)}
+
+
 async def run_agent(
     agent: Any,
     prompt: str,
@@ -76,23 +115,43 @@ async def run_agent(
     timeout: float = 120.0,
     retries: int = 2,
 ) -> Any:
+    from pydantic_ai.exceptions import UsageLimitExceeded
+    from pydantic_ai.usage import UsageLimits
+
+    try:
+        check_budget(user_id)
+    except BudgetExceeded as e:
+        audit.record("agent_blocked", user_id, agent=name, trigger=trigger, reason=str(e))
+        raise
+
+    # Hard per-run limits: a confused agent cannot loop or balloon its context forever.
+    limits = UsageLimits(request_limit=config.RUN_REQUEST_LIMIT, total_tokens_limit=config.RUN_TOKEN_LIMIT)
     started = time.perf_counter()
     last_err: Exception | None = None
     for attempt in range(retries + 1):
         try:
-            result = await asyncio.wait_for(agent.run(prompt), timeout=timeout)
-            usage = None
+            result = await asyncio.wait_for(agent.run(prompt, usage_limits=limits), timeout=timeout)
             try:
-                u = result.usage  # property in pydantic-ai >= 2
-                usage = {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens}
-            except Exception:  # usage is best-effort
-                pass
+                usage = _measure(result)
+            except Exception:  # measurement is best-effort
+                usage = None
+            if usage:
+                with get_conn() as conn:
+                    conn.execute(
+                        "INSERT INTO agent_usage (user_id, day, agent, input_tokens, cached_tokens, output_tokens, "
+                        "web_searches, cost_usd) VALUES (?,?,?,?,?,?,?,?)",
+                        (user_id, _today(), name, usage["input_tokens"], usage["cached_tokens"],
+                         usage["output_tokens"], usage["web_searches"], usage["cost_usd"]),
+                    )
             audit.record(
                 "agent_run", user_id, agent=name, trigger=trigger, outcome="success",
                 attempts=attempt + 1, seconds=round(time.perf_counter() - started, 2),
                 injection_flags=injection_flags, usage=usage,
             )
             return result.output
+        except UsageLimitExceeded as e:  # never retry a run that hit its limits
+            last_err = e
+            break
         except asyncio.TimeoutError as e:
             last_err = e
         except Exception as e:  # model / network / validation errors
@@ -107,4 +166,6 @@ async def run_agent(
     )
     if isinstance(last_err, asyncio.TimeoutError):
         raise HarnessError("The AI agent took too long to respond. Please try again.")
+    if isinstance(last_err, UsageLimitExceeded):
+        raise HarnessError("The AI agent hit its per-run safety limit and was stopped.")
     raise HarnessError(f"The AI agent could not complete the request ({type(last_err).__name__}: {str(last_err)[:160]}).")

@@ -33,11 +33,7 @@ BUSINESS_TYPES = {
         "Marketplace", "Wholesale / distribution", "Agency / consultancy",
     ],
 }
-CATEGORIES = [
-    "Software / SaaS", "Telecom & Internet", "Insurance", "Utilities", "Facilities & Lease",
-    "Professional Services", "Marketing", "Logistics & Shipping", "Payment Processing", "Equipment",
-    "Client Services", "Staffing", "Other",
-]
+CATEGORIES = agents.CATEGORIES
 
 
 # ------------------------------------------------------------------ lifecycle
@@ -221,7 +217,7 @@ def _latest_rate_check(conn, contract_id: int) -> Optional[dict]:
                      (contract_id,)).fetchone()
     if not r:
         return None
-    return {"result": json.loads(r["result_json"]), "source": r["source"], "trigger": r["trigger"],
+    return {"result": agents.clean_text(json.loads(r["result_json"])), "source": r["source"], "trigger": r["trigger"],
             "created_at": r["created_at"]}
 
 
@@ -391,7 +387,7 @@ async def extract(file: UploadFile = File(...), user: dict = Depends(current_use
     """Usability improvement: read a PDF and pre-fill the contract form."""
     data = await _read_pdf(file)
     try:
-        fields, source = await agents.extract_contract(_pdf_text(data), file.filename or "contract.pdf", user["id"])
+        fields, source = await agents.extract_contract(_pdf_text(data), file.filename or "contract.pdf", user["id"], user["business_name"])
     except HarnessError as e:
         raise HTTPException(502, str(e))
     return {"fields": fields.model_dump(mode="json"), "source": source}
@@ -425,14 +421,14 @@ async def bulk_upload(files: list[UploadFile] = File(...), user: dict = Depends(
                         errors.append({"file": f"{name} row {i}", "error": str(e).split("\n")[0][:200]})
                 continue
             data = await _read_pdf(f)
-            fields, source = await agents.extract_contract(_pdf_text(data), name, user["id"])
+            fields, source = await agents.extract_contract(_pdf_text(data), name, user["id"], user["business_name"])
             d = fields.model_dump()
             missing = [k for k in REQUIRED_FOR_REVIEW if d.get(k) in (None, "")]
             record = {
                 "name": d.get("name") or name.rsplit(".", 1)[0], "counterparty": d.get("counterparty") or "Unknown",
                 "line_type": d.get("line_type") or "expense", "category": d.get("category") or "Other",
                 "annual_value": d.get("annual_value") or 0, "start_date": d.get("start_date"),
-                "end_date": d.get("end_date"), "notice_days": d.get("notice_days") or 30,
+                "end_date": d.get("end_date"), "notice_days": 30 if d.get("notice_days") is None else d["notice_days"],
                 "auto_renew": bool(d.get("auto_renew")), "scope": d.get("scope") or "",
                 "notes": f"Imported from {name} ({source})." + (f" Missing: {', '.join(missing)}." if missing else ""),
             }

@@ -1,5 +1,7 @@
 # MyContractIQ
 
+**Live app: https://mycontractiq.onrender.com** · **Report: [report/MyContractIQ_Report.html](report/MyContractIQ_Report.html)** · **Repo: https://github.com/Slimvicky/MyContractIQ**
+
 **Contract management for small businesses.** Track every contract, get reminders before renewals and notice deadlines, and let AI agents find better rates and hidden savings.
 
 > We empower small businesses with simple, affordable tools to manage contracts, streamline operations, and connect essential business systems—all in one platform.
@@ -27,7 +29,7 @@ Built for MGT 409 (Final Project).
 - Passwords are **salted and hashed** with scrypt (16-byte random salt per user). Plain-text passwords are never stored.
 - Session tokens are random. Only their SHA-256 digests are stored.
 - **Append-only audit trail** at `output/audit_trail.json` (JSON Lines). Each entry is hash-chained to the one before it, so edits to history can be detected (`GET /api/audit/verify`). Secrets are redacted.
-- **Agent harness** (`backend/app/harness.py`) wraps every agent call. It adds prompt-injection defense (untrusted PDF/scope text is scrubbed and fenced in `<untrusted_data>` tags), timeouts, retries with backoff, structured-output validation, removal of made-up contract IDs, and audit logging.
+- **Agent harness** (`backend/app/harness.py`) wraps every agent call. It adds prompt-injection defense (untrusted PDF/scope text is scrubbed and fenced in `<untrusted_data>` tags), timeouts, retries with backoff, structured-output validation, removal of made-up contract IDs, and audit logging. It also enforces spending limits: each run is capped at 10 model calls and 150k tokens, and each business has a daily cap of 80 runs and 600k tokens, plus an app-wide 10M-token daily cap. Tokens, cached tokens, web searches and cost are recorded per run in the `agent_usage` table.
 
 ### Agent / backend usability improvements
 1. **AI auto-extraction from PDFs.** Upload a contract PDF (or 50 at once) and the extraction agent fills in the vendor/client, value, dates, notice period and scope. Anything it can't read is flagged *Needs review*.
@@ -66,7 +68,7 @@ Without an `OPENAI_API_KEY`, the app runs in offline mode: every agent uses a cl
 backend/app/
   main.py          FastAPI routes (auth, contracts, uploads, overview, agents, calendar)
   agents.py        Rate, portfolio and extraction agents (Pydantic AI) + fallbacks
-  harness.py       Agent harness: injection defense, retries, timeouts, auditing
+  harness.py       Agent harness: injection defense, retries, timeouts, spending caps, usage ledger, auditing
   security.py      scrypt password hashing, session tokens
   audit.py         Append-only, hash-chained audit trail
   calendar_ics.py  .ics export

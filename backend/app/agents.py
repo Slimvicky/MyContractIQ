@@ -22,6 +22,13 @@ from .harness import GUARDRAIL_INSTRUCTIONS, HarnessError, fence, run_agent
 
 # ---------------------------------------------------------------- output models
 
+CATEGORIES = [
+    "Software / SaaS", "Telecom & Internet", "Insurance", "Utilities", "Facilities & Lease",
+    "Professional Services", "Marketing", "Logistics & Shipping", "Payment Processing", "Equipment",
+    "Client Services", "Staffing", "Inventory & Supplies", "Other",
+]
+Category = Literal[tuple(CATEGORIES)]  # type: ignore[valid-type]
+
 
 class Alternative(BaseModel):
     provider: str
@@ -65,13 +72,27 @@ class ContractExtraction(BaseModel):
     line_type: Optional[Literal["expense", "revenue"]] = Field(
         None, description="revenue if the business is paid (e.g. client service agreement), expense if it pays"
     )
-    category: Optional[str] = None
+    category: Optional[Category] = None
     annual_value: Optional[float] = Field(None, description="Annualised contract value in USD")
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     notice_days: Optional[int] = None
     auto_renew: Optional[bool] = None
     scope: Optional[str] = Field(None, description="One or two sentence description of what the contract covers")
+
+
+_CITE_RE = re.compile(r"\s*\ue200[^\ue201]*\ue201|[\ue200-\ue2ff]")
+
+
+def clean_text(value):
+    """Strip the model's internal web-citation markers (private-use characters) from any text in a result."""
+    if isinstance(value, str):
+        return _CITE_RE.sub("", value).strip()
+    if isinstance(value, list):
+        return [clean_text(v) for v in value]
+    if isinstance(value, dict):
+        return {k: clean_text(v) for k, v in value.items()}
+    return value
 
 
 # ---------------------------------------------------------------- agent factories
@@ -136,8 +157,13 @@ def extraction_agent():
         _model(),
         output_type=ContractExtraction,
         instructions=(
-            "Extract contract terms from the document text. Leave a field null if it is not stated. "
-            "annual_value must be annualised (e.g. $500/month -> 6000)."
+            "Extract contract terms from the document text for the USER'S BUSINESS named in the prompt. "
+            "counterparty is always the OTHER party, never the user's business. line_type is 'revenue' when the "
+            "user's business is the service provider or is paid (e.g. client service, rental or workshop agreements), "
+            "and 'expense' when the user's business pays. annual_value is the contracted annual amount for the "
+            "current term (e.g. $500/month -> 6000); ignore post-expiry or month-to-month holdover rates. "
+            "notice_days is 0 if no notice is required. name is the document title (e.g. 'Wholesale Supply Agreement'), "
+            "never a party name. Leave a field null if it is not stated."
             + GUARDRAIL_INSTRUCTIONS
         ),
         retries=2,
@@ -166,10 +192,8 @@ async def check_rates(contract: dict, business_type: str, user_id: int, trigger:
     try:
         out = await run_agent(rate_agent(), prompt, name="rate_agent", user_id=user_id, trigger=trigger, injection_flags=flags)
     except HarnessError as e:  # graceful degradation: never leave the user with nothing
-        fallback = _heuristic_rates(contract)
-        fallback.summary = f"AI agent unavailable ({e}). " + fallback.summary
-        return fallback.model_dump(), "heuristic"
-    return out.model_dump(), f"ai:{config.OPENAI_MODEL}+web_search"
+        return _heuristic_rates(contract, reason=str(e)).model_dump(), "heuristic"
+    return clean_text(out.model_dump()), f"ai:{config.OPENAI_MODEL}+web_search"
 
 
 async def review_portfolio(contracts: list[dict], business_type: str, user_id: int) -> tuple[dict, str]:
@@ -192,16 +216,17 @@ async def review_portfolio(contracts: list[dict], business_type: str, user_id: i
     for f in out.findings:  # harness-style output check: drop hallucinated ids
         f.contract_ids = [i for i in f.contract_ids if i in valid]
     out.findings = [f for f in out.findings if f.contract_ids]
-    return out.model_dump(), f"ai:{config.OPENAI_MODEL}"
+    return clean_text(out.model_dump()), f"ai:{config.OPENAI_MODEL}"
 
 
-async def extract_contract(text: str, file_name: str, user_id: int) -> tuple[ContractExtraction, str]:
+async def extract_contract(text: str, file_name: str, user_id: int, business_name: str = "") -> tuple[ContractExtraction, str]:
     if not config.ai_enabled() or not text.strip():
         return _heuristic_extract(text, file_name), "heuristic"
     block, flags = fence(file_name, text, 15000)
     try:
         out = await run_agent(
-            extraction_agent(), f"Document '{file_name}':\n{block}", name="extraction_agent",
+            extraction_agent(), f"User's business: {business_name or 'unknown'}\nDocument '{file_name}':\n{block}",
+            name="extraction_agent",
             user_id=user_id, trigger="upload", injection_flags=flags, timeout=90, retries=1,
         )
     except HarnessError:
@@ -214,29 +239,32 @@ async def extract_contract(text: str, file_name: str, user_id: int) -> tuple[Con
 TYPICAL_SAVINGS = {
     "Software / SaaS": 0.15, "Telecom & Internet": 0.18, "Insurance": 0.10, "Utilities": 0.08,
     "Facilities & Lease": 0.05, "Professional Services": 0.10, "Marketing": 0.12,
-    "Logistics & Shipping": 0.12, "Payment Processing": 0.15, "Equipment": 0.08,
+    "Logistics & Shipping": 0.12, "Payment Processing": 0.15, "Equipment": 0.08, "Inventory & Supplies": 0.06,
 }
 
 
-def _heuristic_rates(c: dict) -> RateRecommendation:
+def _heuristic_rates(c: dict, reason: str | None = None) -> RateRecommendation:
     pct = TYPICAL_SAVINGS.get(c["category"], 0.08)
     value = float(c["annual_value"] or 0)
+    # Say honestly why live web search was not used.
+    why = f"AI agent unavailable: {reason} " if reason else "Live web search is off (no OpenAI key). "
+    hint = "Try the rate check again later" if reason else "Add OPENAI_API_KEY to .env for live web rate search"
     if c["line_type"] == "revenue":
         return RateRecommendation(
-            summary=(f"Revenue contract with {c['counterparty']}. Small businesses typically raise rates "
-                     f"3–5% at renewal to keep pace with costs. Live web benchmarking is off (no OpenAI key)."),
+            summary=(f"{why}Rule-based estimate: small businesses typically raise rates "
+                     f"3–5% at renewal to keep pace with costs."),
             recommendation="raise_price", confidence="low", estimated_annual_impact=round(value * 0.04, 2),
             next_steps=["Review delivery costs for this client", "Propose a 3–5% increase in the renewal notice",
-                        "Add OPENAI_API_KEY to .env for live market benchmarking"],
+                        hint],
         )
     return RateRecommendation(
-        summary=(f"Businesses that re-quote {c['category'].lower()} contracts at renewal typically save about "
-                 f"{int(pct * 100)}%. Live web search is off (no OpenAI key), so this is a rule-of-thumb estimate."),
+        summary=(f"{why}Rule-based estimate: businesses that re-quote {c['category'].lower()} contracts at "
+                 f"renewal typically save about {int(pct * 100)}%."),
         recommendation="renegotiate", confidence="low",
         market_low=round(value * (1 - pct * 1.5), 2), market_high=round(value, 2),
         estimated_annual_impact=round(value * pct, 2),
         next_steps=["Collect 2–3 competing quotes", f"Ask {c['counterparty']} to match the best quote",
-                    "Add OPENAI_API_KEY to .env for live web rate search"],
+                    hint],
     )
 
 
