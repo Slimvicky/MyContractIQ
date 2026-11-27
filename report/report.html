@@ -128,7 +128,7 @@
     <li><b>It looks across contracts.</b> The portfolio agent reviews every contract together to find overlap, such as two email tools, two POS systems, or two suppliers of the same paint, that nobody sees when each contract lives in its own folder.</li>
     <li><b>It tracks both sides.</b> Expense lines (we pay) and revenue lines (we get paid, like client service agreements) are separated. For revenue contracts, the agent checks whether the business is under-pricing.</li>
     <li><b>It needs almost no setup.</b> Drop in a stack of PDFs; the extraction agent fills in every field. Sign-up asks once whether to put every contract date into the owner's calendar.</li>
-    <li><b>It's priced for one business, not per seat.</b> The proposed plan is <b>$24 a month per business</b> with a <b>30-day free trial</b>. That's about 5% of ContractSafe's entry price, and less than one Zoho seat. Section 5 shows the AI cost per business is about $0.10 a month, so the price is sustainable.</li>
+    <li><b>It's priced for one business, not per seat.</b> The proposed plan is <b>$24 a month per business</b> with a <b>30-day free trial</b>. That's about 5% of ContractSafe's entry price, and less than one Zoho seat. Section 5 shows the AI cost per business is about $0.29 a month, so the price is sustainable.</li>
   </ol>
 
   <div class="callout"><b>Honest positioning:</b> MyContractIQ does not draft contracts or collect e-signatures, and it isn't trying to replace Zoho or ContractSafe for a company with a legal team. It manages the agreements an owner already has, and turns them into savings.</div>
@@ -164,7 +164,7 @@
     <text x="202" y="195">6. Log tokens, cost, injection flags</text>
     <text x="202" y="219">7. On failure: rule-based estimate</text>
     <rect x="440" y="26" width="150" height="44" rx="6" fill="#0f766e"/><text x="515" y="45" text-anchor="middle" fill="#fff" font-weight="700">Extraction agent</text><text x="515" y="60" text-anchor="middle" fill="#cffafe">no tools</text>
-    <rect x="440" y="104" width="150" height="44" rx="6" fill="#0f766e"/><text x="515" y="123" text-anchor="middle" fill="#fff" font-weight="700">Rate agent</text><text x="515" y="138" text-anchor="middle" fill="#cffafe">tool: web search</text>
+    <rect x="440" y="104" width="150" height="44" rx="6" fill="#0f766e"/><text x="515" y="123" text-anchor="middle" fill="#fff" font-weight="700">Rate agent</text><text x="515" y="138" text-anchor="middle" fill="#cffafe">web search ×3 → median</text>
     <rect x="440" y="182" width="150" height="44" rx="6" fill="#0f766e"/><text x="515" y="201" text-anchor="middle" fill="#fff" font-weight="700">Portfolio agent</text><text x="515" y="216" text-anchor="middle" fill="#cffafe">no tools</text>
     <rect x="618" y="100" width="96" height="52" rx="6" fill="#f1f5f6" stroke="#5b6470"/><text x="666" y="122" text-anchor="middle">The web</text><text x="666" y="137" text-anchor="middle" fill="#5b6470">pricing pages</text>
     <rect x="300" y="280" width="300" height="48" rx="8" fill="#f1f5f6" stroke="#5b6470"/><text x="450" y="300" text-anchor="middle" font-weight="700">Contracts database (SQLite)</text><text x="450" y="317" text-anchor="middle" fill="#5b6470">→ Overview actions · calendar feed · audit trail</text>
@@ -215,6 +215,11 @@ Search the web for current market rates and recommend.</pre></li>
   <div class="two">
   <figure><img src="img/08_recommendations.jpg" alt="Recommendations" /><figcaption>Figure 3. All 7 rate recommendations, ranked by estimated yearly impact (total $5,232 a year). The cards say when the agent isn't sure: the FedEx card reports low confidence and recommends benchmarking before switching.</figcaption></figure>
   <figure><img src="img/10_portfolio_review.jpg" alt="Portfolio review" /><figcaption>Figure 4. Portfolio review (live, 12 seconds, $0.001). It found 5 opportunities worth $6,870 a year: overlapping email tools (Mailchimp and Klaviyo, plus Shopify's built-in email), Square vs. Shopify POS, combined volume across two art-supply wholesalers, UPS vs. FedEx, and an under-priced library workshop contract. It caught <b>all 4 planted overlaps</b> in which both contracts were active. <b>Update:</b> after expired contracts still being paid were included (Section 8), a re-run found <b>all 7 of 7</b> planted overlaps and $10,912 a year, adding Shopify vs. Wix, in-house vs. outsourced framing, the two insurance policies and ADT's holdover pricing.</figcaption></figure>
+  </div>
+  <h3>Two improvements added after testing</h3>
+  <div class="two">
+  <figure><img src="img/15_rate_check_three_runs.jpg" alt="Rate check with three runs" /><figcaption>Figure 4b. Every rate check now runs the agent <b>3 times</b> and shows the majority recommendation, the median and the range. On this re-check of Square, 2 of 3 runs said switch: median $1,692 a year, range $492–$2,280. Because the runs disagreed, confidence is shown as low.</figcaption></figure>
+  <figure><img src="img/16_portfolio_still_paying.jpg" alt="Portfolio review with expired contracts still being paid" /><figcaption>Figure 4c. Portfolio review now includes contracts that expired in the last 180 days but are <b>still being paid</b> (marked by the owner with one click). With 4 marked, it found all 7 planted overlaps. Two runs estimated $10,912 and $11,892 a year.</figcaption></figure>
   </div>
 </section>
 
@@ -274,7 +279,7 @@ Search the web for current market rates and recommend.</pre></li>
     <tr><td>high</td><td class="n">$0.030</td><td class="n">2.67</td><td class="n">26,770</td><td class="n">5</td><td>No better than medium, 56% more expensive</td></tr>
   </table>
   <p><b>Finding:</b> the cheaper setting was <i>not</i> cheaper. The model searched more to make up for less context per search, and it produced one unsupported savings figure. So that cost cut would have made the app worse. I kept <b>medium</b>. The real savings come from running the agent less often (the 60-day window and cache), not from making each run shallower.</p>
-  <div class="callout warn"><b>Second, honest finding: estimates vary from run to run.</b> Across 4 runs, the estimate for Jerry's Artarama ranged from $0 to $1,692. That's why every recommendation shows a confidence level and source links, and why the next steps always say to get real quotes before acting. <b>Now built:</b> every check runs 3 times and reports the median and range. On a re-test, Jerry's median was $0 with a range of $0–$660, so the app shows low confidence instead of one confident-looking number. Square's 3 runs all agreed on $1,692.</div>
+  <div class="callout warn"><b>Second, honest finding: estimates vary from run to run.</b> Across 4 runs, the estimate for Jerry's Artarama ranged from $0 to $1,692. That's why every recommendation shows a confidence level and source links, and why the next steps always say to get real quotes before acting. <b>Now built:</b> every check runs 3 times and reports the median and range (Figure 4b). Two re-checks of Jerry's gave a median of $0 (range $0–$660) and then $660 (range $0–$1,100), so the app shows low confidence instead of one confident-looking number. Square's first re-check had all 3 runs agree on $1,692.</div>
 
   <h3>The 60-day window: a cost cut with a known trade-off</h3>
   <p>Limiting checks to the 60 days before renewal is the biggest saving, but it's too late for contracts with long notice periods. Art Shopee's storefront lease needs <b>180 days</b> of notice to use its renewal option, so a check at 60 days would come after the deadline. The Overview still flags the notice deadline as an action, but the rate check should start earlier for these contracts (Section 8).</p>
@@ -368,7 +373,7 @@ Search the web for current market rates and recommend.</pre></li>
   <h3>What doesn't work yet</h3>
   <ul>
     <li><b>No real user yet.</b> All results come from my test data. The savings estimates need validation against real quotes.</li>
-    <li><b>Storage is a single SQLite file.</b> The app runs on a paid Render instance. Render's filesystem is temporary on every plan, so the database, uploaded PDFs and audit trail are stored on a Render persistent disk (set with <code>DATA_DIR</code>) to survive redeploys. A disk ties the app to one server, so scaling to many customers means moving to managed Postgres and cloud file storage.</li>
+    <li><b>Live data doesn't survive redeploys yet.</b> The app runs on a paid Render instance, but Render's filesystem is temporary on every plan, so each redeploy resets the SQLite database and uploaded PDFs. The app already supports a persistent disk (set <code>DATA_DIR</code>); attaching one is the next step, and managed Postgres after that.</li>
     <li><b>Billing isn't built.</b> The $24-a-month plan and 30-day trial are the business model, not yet a Stripe integration.</li>
     <li><b>Welcome emails aren't sent.</b> They're generated and saved to an outbox; SMTP isn't configured.</li>
     <li><b>Rate estimates still vary from run to run.</b> The app now runs each check 3 times and shows the median and range (Jerry's: $0, range $0–$660), which triples the rate-check cost. A wide range still means "get real quotes".</li>

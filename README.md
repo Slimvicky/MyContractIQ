@@ -1,6 +1,6 @@
 # MyContractIQ
 
-**Live app: https://mycontractiq.onrender.com** · **Report: [report/MyContractIQ_Report.html](report/MyContractIQ_Report.html)** · **Repo: https://github.com/Slimvicky/MyContractIQ**
+**Live app: https://mycontractiq.onrender.com** · **Report: [report/report.html](report/report.html)** · **Slides: [report/slides.html](report/slides.html)** · **Repo: https://github.com/Slimvicky/MyContractIQ**
 
 **Contract management for small businesses.** Track every contract, get reminders before renewals and notice deadlines, and let AI agents find better rates and hidden savings.
 
