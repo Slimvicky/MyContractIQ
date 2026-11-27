@@ -8,14 +8,22 @@ from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 BACKEND_DIR = ROOT_DIR / "backend"
-DATA_DIR = BACKEND_DIR / "data"
-UPLOAD_DIR = DATA_DIR / "uploads"
-DB_PATH = DATA_DIR / "mycontractiq.db"
-OUTPUT_DIR = ROOT_DIR / "output"
-AUDIT_TRAIL_PATH = OUTPUT_DIR / "audit_trail.json"
-OUTBOX_DIR = OUTPUT_DIR / "outbox"
 
 load_dotenv(ROOT_DIR / ".env")
+
+# Where data is stored. By default it lives inside the project. On a host with a temporary
+# filesystem (e.g. Render), set DATA_DIR to a persistent disk mount such as /var/data;
+# the audit trail and outbox then go to DATA_DIR/output unless OUTPUT_DIR is also set.
+_data_env = os.getenv("DATA_DIR", "").strip()
+_output_env = os.getenv("OUTPUT_DIR", "").strip()
+DATA_DIR = Path(_data_env).expanduser() if _data_env else BACKEND_DIR / "data"
+OUTPUT_DIR = (Path(_output_env).expanduser() if _output_env
+              else DATA_DIR / "output" if _data_env else ROOT_DIR / "output")
+UPLOAD_DIR = DATA_DIR / "uploads"
+EXTERNAL_STORAGE = bool(_data_env)  # True when DATA_DIR points outside the app folder
+DB_PATH = DATA_DIR / "mycontractiq.db"
+AUDIT_TRAIL_PATH = OUTPUT_DIR / "audit_trail.json"
+OUTBOX_DIR = OUTPUT_DIR / "outbox"
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()

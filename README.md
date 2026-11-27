@@ -62,6 +62,13 @@ Open http://127.0.0.1:8000. For frontend development with hot reload, run `npm r
 
 Without an `OPENAI_API_KEY`, the app runs in offline mode: every agent uses a clearly labelled rule-based fallback.
 
+## Deploying on Render
+
+- **Build command:** `pip install -r backend/requirements.txt && cd frontend && npm ci && npm run build`
+- **Start command:** `uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port $PORT`
+- **Environment:** `OPENAI_API_KEY`, `OPENAI_MODEL`, `PYTHON_VERSION=3.12.8`, and `DATA_DIR=/var/data`.
+- **Persistent disk (required to keep data).** Render's filesystem is temporary on every plan, so attach a disk (Service → Disks, mount path `/var/data`, 1 GB is plenty). With `DATA_DIR` set, the SQLite database, uploaded PDFs, audit trail and outbox are all stored on the disk and survive redeploys. `GET /api/health` returns `"external_storage": true` when this is active.
+
 ## Project structure
 
 ```

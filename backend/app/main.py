@@ -126,7 +126,8 @@ class LoginIn(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "ai_enabled": config.ai_enabled(), "model": config.OPENAI_MODEL}
+    return {"ok": True, "ai_enabled": config.ai_enabled(), "model": config.OPENAI_MODEL,
+            "external_storage": config.EXTERNAL_STORAGE}
 
 
 @app.get("/api/meta")

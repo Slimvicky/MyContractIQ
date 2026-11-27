@@ -367,7 +367,7 @@ Search the web for current market rates and recommend.</pre></li>
   <h3>What doesn't work yet</h3>
   <ul>
     <li><b>No real user yet.</b> All results come from my test data. The savings estimates need validation against real quotes.</li>
-    <li><b>Live data doesn't survive redeploys yet.</b> The app runs on a paid Render instance, but Render's filesystem is temporary on every plan. The SQLite database and uploaded PDFs live in the app's own folder, so each redeploy resets them. The fix is to attach a Render persistent disk (or move to managed Postgres) and point the data folder at it.</li>
+    <li><b>Storage is a single SQLite file.</b> The app runs on a paid Render instance. Render's filesystem is temporary on every plan, so the database, uploaded PDFs and audit trail are stored on a Render persistent disk (set with <code>DATA_DIR</code>) to survive redeploys. A disk ties the app to one server, so scaling to many customers means moving to managed Postgres and cloud file storage.</li>
     <li><b>Billing isn't built.</b> The $24-a-month plan and 30-day trial are the business model, not yet a Stripe integration.</li>
     <li><b>Welcome emails aren't sent.</b> They're generated and saved to an outbox; SMTP isn't configured.</li>
     <li><b>Rate estimates vary from run to run</b> (Jerry's: $0 to $1,692 across 4 runs).</li>
