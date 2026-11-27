@@ -155,6 +155,9 @@ export default function OverviewPage() {
                 </div>
                 <Link to={`/contracts?id=${r.contract_id}`} className="rec-name">{r.contract_name}</Link>
                 <div className="muted small">{r.counterparty} · {money(r.annual_value)}/yr · renews {daysLabel(r.days_to_end)}</div>
+                {r.runs && r.runs > 1 && (
+                  <div className="small muted">Median of {r.runs} runs · range {money(r.impact_low)} – {money(r.impact_high)}</div>
+                )}
                 <p className="small">{r.summary}</p>
                 {r.alternatives.length > 0 && (
                   <div className="small muted">Alternatives: {r.alternatives.slice(0, 3).map((a) => a.provider).join(', ')}</div>

@@ -9,8 +9,10 @@ fallback results are clearly labelled with source="heuristic".
 """
 from __future__ import annotations
 
+import asyncio
 import re
-from collections import defaultdict
+import statistics
+from collections import Counter, defaultdict
 from datetime import date
 from functools import lru_cache
 from typing import Literal, Optional
@@ -141,7 +143,9 @@ def portfolio_agent():
             "Find savings that would normally be missed when contracts sit in silos: overlapping scope "
             "(two tools doing the same job), duplicate vendors, contracts that could be consolidated for "
             "volume discounts, scale mismatches (paying for more seats/capacity than needed), and "
-            "under-priced revenue contracts. Only reference contract ids that exist in the data. "
+            "under-priced revenue contracts. Some contracts are marked EXPIRED but STILL BEING PAID: treat them as "
+            "live spend (often at worse holdover rates) and check them for overlap with active contracts too; "
+            "the usual action is to cancel, or renew on new terms. Only reference contract ids that exist in the data. "
             "Give realistic USD savings estimates and concrete next actions."
             + GUARDRAIL_INSTRUCTIONS
         ),
@@ -174,11 +178,16 @@ def extraction_agent():
 
 
 def _contract_brief(c: dict) -> str:
-    return (
+    brief = (
         f"id={c['id']} | {c['line_type'].upper()} | {c['name']} | counterparty: {c['counterparty']} | "
         f"category: {c['category']} | annual value: ${c['annual_value']:,.0f} | "
         f"term: {c.get('start_date') or '?'} to {c.get('end_date') or '?'} | auto-renew: {bool(c.get('auto_renew'))}"
     )
+    if c.get("status") == "expired":
+        brief += (" | STATUS: EXPIRED but STILL BEING PAID (no current contract; likely month-to-month "
+                  "or holdover pricing)" if c["line_type"] == "expense" else
+                  " | STATUS: EXPIRED but CLIENT STILL PAYING (no current contract; renew on updated pricing)")
+    return brief
 
 
 async def check_rates(contract: dict, business_type: str, user_id: int, trigger: str) -> tuple[dict, str]:
@@ -189,11 +198,59 @@ async def check_rates(contract: dict, business_type: str, user_id: int, trigger:
         f"Business type: {business_type}\nContract: {_contract_brief(contract)}\n"
         f"Scope (untrusted):\n{scope_block}\n\nSearch the web for current market rates and recommend."
     )
-    try:
-        out = await run_agent(rate_agent(), prompt, name="rate_agent", user_id=user_id, trigger=trigger, injection_flags=flags)
-    except HarnessError as e:  # graceful degradation: never leave the user with nothing
-        return _heuristic_rates(contract, reason=str(e)).model_dump(), "heuristic"
-    return clean_text(out.model_dump()), f"ai:{config.OPENAI_MODEL}+web_search"
+    n = max(1, config.RATE_CHECK_RUNS)
+    # Web-search answers vary run to run, so run the agent several times in parallel and
+    # report the median estimate with the range, instead of trusting a single answer.
+    results = await asyncio.gather(
+        *(run_agent(rate_agent(), prompt, name="rate_agent", user_id=user_id, trigger=f"{trigger}:run{i + 1}of{n}",
+                    injection_flags=flags) for i in range(n)),
+        return_exceptions=True,
+    )
+    ok = [r for r in results if isinstance(r, RateRecommendation)]
+    if not ok:  # graceful degradation: never leave the user with nothing
+        err = next((r for r in results if isinstance(r, HarnessError)), None)
+        if err is None and results and isinstance(results[0], BaseException):
+            raise results[0]
+        return _heuristic_rates(contract, reason=str(err)).model_dump(), "heuristic"
+    return clean_text(aggregate_rate_runs(ok)), f"ai:{config.OPENAI_MODEL}+web_search"
+
+
+def aggregate_rate_runs(runs: list[RateRecommendation]) -> dict:
+    """Combine independent rate-agent runs: majority recommendation, median impact and market range.
+
+    Adds runs / impact_low / impact_high / agreement to the result (set by the app, not the model).
+    """
+    impacts = sorted(r.estimated_annual_impact for r in runs)
+    med = statistics.median(impacts)
+    votes = Counter(r.recommendation for r in runs)
+    top = max(votes.values())
+    # ties go to the recommendation whose runs sit closest to the median impact
+    winners = [k for k, v in votes.items() if v == top]
+    pick = min((r for r in runs if r.recommendation in winners), key=lambda r: abs(r.estimated_annual_impact - med))
+    out = pick.model_dump()
+    out["estimated_annual_impact"] = round(med, 2)
+    lows = [r.market_low for r in runs if r.market_low is not None]
+    highs = [r.market_high for r in runs if r.market_high is not None]
+    out["market_low"] = round(statistics.median(lows), 2) if lows else None
+    out["market_high"] = round(statistics.median(highs), 2) if highs else None
+    # Lower confidence when runs disagree on the action or the estimates are far apart.
+    order = ["low", "medium", "high"]
+    conf = min((r.confidence for r in runs), key=order.index)
+    if top < len(runs) or (med > 0 and impacts[-1] - impacts[0] > med):
+        conf = "low"
+    out["confidence"] = conf
+    # Keep the most useful alternatives across runs (deduplicated by provider).
+    seen, alts = set(), []
+    for r in [pick] + [r for r in runs if r is not pick]:
+        for a in r.alternatives:
+            key = a.provider.strip().lower()
+            if key not in seen:
+                seen.add(key)
+                alts.append(a.model_dump())
+    out["alternatives"] = alts[:5]
+    out.update(runs=len(runs), impact_low=round(impacts[0], 2), impact_high=round(impacts[-1], 2),
+               agreement=f"{top} of {len(runs)} runs recommend {pick.recommendation.replace('_', ' ')}")
+    return out
 
 
 async def review_portfolio(contracts: list[dict], business_type: str, user_id: int) -> tuple[dict, str]:

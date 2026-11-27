@@ -38,12 +38,14 @@ SMTP_FROM = os.getenv("SMTP_FROM", "MyContractIQ <no-reply@mycontractiq.app>").s
 # Business rules
 RATE_CHECK_WINDOW_DAYS = 60      # agent may start a rate search this many days before renewal
 RATE_CHECK_CACHE_HOURS = 24      # re-use a rate search result for this long
+RATE_CHECK_RUNS = int(os.getenv("RATE_CHECK_RUNS", "3"))  # independent rate-agent runs; we report median + range
+RECENTLY_EXPIRED_DAYS = 180      # expired contracts still being paid stay in the portfolio review this long
 SESSION_DAYS = 7
 MAX_UPLOAD_MB = 15
 
 # Spending guards (override in .env)
 DAILY_AGENT_RUNS_PER_USER = int(os.getenv("DAILY_AGENT_RUNS_PER_USER", "80"))
-DAILY_TOKENS_PER_USER = int(os.getenv("DAILY_TOKENS_PER_USER", "600000"))
+DAILY_TOKENS_PER_USER = int(os.getenv("DAILY_TOKENS_PER_USER", "700000"))
 DAILY_TOKENS_GLOBAL = int(os.getenv("DAILY_TOKENS_GLOBAL", "10000000"))
 RUN_REQUEST_LIMIT = int(os.getenv("RUN_REQUEST_LIMIT", "10"))        # model round-trips per run (stops loops)
 RUN_TOKEN_LIMIT = int(os.getenv("RUN_TOKEN_LIMIT", "150000"))        # tokens per run

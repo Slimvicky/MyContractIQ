@@ -14,14 +14,14 @@ Built for MGT 409 (Final Project).
 |---|---|
 | **Overview** | Summary metrics (contracts, annual expense vs. revenue, renewals ≤ 60 days, identified savings), a prioritized **Actions due** list, and recommendations from the rate agent |
 | **Contracts** | Full details for each contract, notice deadlines, PDF, edit/delete, per-contract rate check and calendar export |
-| **Portfolio Review** | AI agent reviews all contracts together to find redundancy, consolidation and scale savings that are hidden when contracts sit in silos |
+| **Portfolio Review** | AI agent reviews all contracts together to find redundancy, consolidation and scale savings that are hidden when contracts sit in silos. Includes contracts that expired in the last 180 days if they're marked *still being paid* (or auto-renew) |
 | **Upload Contracts** | Bulk upload (many PDFs and/or a CSV) or one contract at a time, with AI auto-fill from PDF |
 | **Repository** | Simple row-by-row table of all contracts with a link to open each PDF |
 | **About Us** | Company mission |
 | **Log in / Create account** | First and last name, business name, business type (industry / operating model), email, password and confirmation |
 
 - **Expense vs. revenue lines.** Vendor contracts (we pay) and client service agreements (we get paid) are tracked separately. For revenue lines, the rate agent checks whether you're under-pricing.
-- **Rate agent (Pydantic AI + OpenAI web search).** Starts on its own 60 days before each renewal (background job) and can also be run from the Overview or Contracts page.
+- **Rate agent (Pydantic AI + OpenAI web search).** Starts on its own 60 days before each renewal (background job) and can also be run from the Overview or Contracts page. Each check runs the agent 3 times in parallel (`RATE_CHECK_RUNS`) and shows the majority recommendation, the median estimate and the range. Confidence drops to low when the runs disagree.
 - **Calendar export.** An `.ics` file with end dates, notice deadlines and the date each rate-check window opens, with reminders. Works with Google, Outlook and Apple Calendar.
 - **Welcome email** sent when an account is created (via SMTP, or saved to `output/outbox/` if SMTP isn't configured).
 
@@ -29,7 +29,7 @@ Built for MGT 409 (Final Project).
 - Passwords are **salted and hashed** with scrypt (16-byte random salt per user). Plain-text passwords are never stored.
 - Session tokens are random. Only their SHA-256 digests are stored.
 - **Append-only audit trail** at `output/audit_trail.json` (JSON Lines). Each entry is hash-chained to the one before it, so edits to history can be detected (`GET /api/audit/verify`). Secrets are redacted.
-- **Agent harness** (`backend/app/harness.py`) wraps every agent call. It adds prompt-injection defense (untrusted PDF/scope text is scrubbed and fenced in `<untrusted_data>` tags), timeouts, retries with backoff, structured-output validation, removal of made-up contract IDs, and audit logging. It also enforces spending limits: each run is capped at 10 model calls and 150k tokens, and each business has a daily cap of 80 runs and 600k tokens, plus an app-wide 10M-token daily cap. Tokens, cached tokens, web searches and cost are recorded per run in the `agent_usage` table.
+- **Agent harness** (`backend/app/harness.py`) wraps every agent call. It adds prompt-injection defense (untrusted PDF/scope text is scrubbed and fenced in `<untrusted_data>` tags), timeouts, retries with backoff, structured-output validation, removal of made-up contract IDs, and audit logging. It also enforces spending limits: each run is capped at 10 model calls and 150k tokens, and each business has a daily cap of 80 runs and 700k tokens, plus an app-wide 10M-token daily cap. Tokens, cached tokens, web searches and cost are recorded per run in the `agent_usage` table.
 
 ### Agent / backend usability improvements
 1. **AI auto-extraction from PDFs.** Upload a contract PDF (or 50 at once) and the extraction agent fills in the vendor/client, value, dates, notice period and scope. Anything it can't read is flagged *Needs review*.

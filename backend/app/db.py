@@ -107,3 +107,7 @@ def init_db() -> None:
             conn.execute("ALTER TABLE users ADD COLUMN calendar_pref TEXT NOT NULL DEFAULT 'unset'")
         if "calendar_feed_hash" not in cols:
             conn.execute("ALTER TABLE users ADD COLUMN calendar_feed_hash TEXT")
+        ccols = {r["name"] for r in conn.execute("PRAGMA table_info(contracts)")}
+        if "still_paying" not in ccols:
+            # 1 = contract has expired but the business is still being billed (holdover / month-to-month)
+            conn.execute("ALTER TABLE contracts ADD COLUMN still_paying INTEGER NOT NULL DEFAULT 0")

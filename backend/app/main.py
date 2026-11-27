@@ -200,6 +200,7 @@ class ContractIn(BaseModel):
     end_date: Optional[date] = None
     notice_days: int = Field(30, ge=0, le=365)
     auto_renew: bool = False
+    still_paying: bool = False  # expired but still being billed
     owner: str = ""
     scope: str = Field("", max_length=4000)
     notes: str = Field("", max_length=4000)
@@ -226,6 +227,7 @@ def _enrich(c: dict, conn) -> dict:
     today = date.today()
     c = dict(c)
     c["auto_renew"] = bool(c["auto_renew"])
+    c["still_paying"] = bool(c.get("still_paying"))
     c["needs_review"] = bool(c["needs_review"])
     c["has_file"] = bool(c.get("file_path"))
     c.pop("file_path", None)
@@ -267,11 +269,12 @@ def _list_contracts(user_id: int) -> list[dict]:
 def _insert_contract(conn, user_id: int, data: dict, needs_review: bool = False) -> int:
     cur = conn.execute(
         "INSERT INTO contracts (user_id, name, counterparty, line_type, category, annual_value, start_date, "
-        "end_date, notice_days, auto_renew, owner, scope, notes, needs_review) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "end_date, notice_days, auto_renew, still_paying, owner, scope, notes, needs_review) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (user_id, data["name"], data["counterparty"], data["line_type"], data.get("category") or "Other",
          data.get("annual_value") or 0, _iso(data.get("start_date")), _iso(data.get("end_date")),
-         data.get("notice_days", 30), int(bool(data.get("auto_renew"))), data.get("owner", ""),
+         data.get("notice_days", 30), int(bool(data.get("auto_renew"))), int(bool(data.get("still_paying"))),
+         data.get("owner", ""),
          data.get("scope", ""), data.get("notes", ""), int(needs_review)),
     )
     return cur.lastrowid
@@ -308,14 +311,30 @@ def update_contract(cid: int, body: ContractIn, user: dict = Depends(current_use
         _get_contract(conn, user["id"], cid)
         conn.execute(
             "UPDATE contracts SET name=?, counterparty=?, line_type=?, category=?, annual_value=?, start_date=?, "
-            "end_date=?, notice_days=?, auto_renew=?, owner=?, scope=?, notes=?, needs_review=0, "
+            "end_date=?, notice_days=?, auto_renew=?, still_paying=?, owner=?, scope=?, notes=?, needs_review=0, "
             "updated_at=datetime('now') WHERE id=? AND user_id=?",
             (d["name"], d["counterparty"], d["line_type"], d["category"], d["annual_value"], _iso(d["start_date"]),
-             _iso(d["end_date"]), d["notice_days"], int(d["auto_renew"]), d["owner"], d["scope"], d["notes"],
+             _iso(d["end_date"]), d["notice_days"], int(d["auto_renew"]), int(d["still_paying"]), d["owner"], d["scope"], d["notes"],
              cid, user["id"]),
         )
         out = _enrich(_get_contract(conn, user["id"], cid), conn)
     audit.record("contract_updated", user["id"], contract_id=cid)
+    return out
+
+
+class StillPayingIn(BaseModel):
+    still_paying: bool
+
+
+@app.post("/api/contracts/{cid}/still-paying")
+def set_still_paying(cid: int, body: StillPayingIn, user: dict = Depends(current_user)):
+    """Mark an expired contract as still being billed, so the portfolio review includes it."""
+    with get_conn() as conn:
+        _get_contract(conn, user["id"], cid)
+        conn.execute("UPDATE contracts SET still_paying = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+                     (int(body.still_paying), cid, user["id"]))
+        out = _enrich(_get_contract(conn, user["id"], cid), conn)
+    audit.record("contract_still_paying", user["id"], contract_id=cid, still_paying=body.still_paying)
     return out
 
 
@@ -561,8 +580,20 @@ def _actions(contracts: list[dict]) -> list[dict]:
                 "line_type": c["line_type"], "annual_value": c["annual_value"]}
         dte, dtn = c["days_to_end"], c["days_to_notice"]
         if dte is not None and dte < 0:
-            acts.append({**base, "type": "expired", "priority": "high", "due_date": c["end_date"],
-                         "title": "Contract has expired", "detail": "Renew, replace or archive this contract."})
+            if c["still_paying"] and c["line_type"] == "revenue":
+                acts.append({**base, "type": "expired", "priority": "high", "due_date": c["end_date"],
+                             "title": "Expired but client still paying",
+                             "detail": "The client pays without a current contract. Renew on updated terms and pricing."})
+            elif c["still_paying"]:
+                acts.append({**base, "type": "expired", "priority": "high", "due_date": c["end_date"],
+                             "title": "Expired but still being paid",
+                             "detail": "You're billed without a current contract, often at a higher holdover rate. "
+                                       "Renew on new terms or cancel."})
+            else:
+                acts.append({**base, "type": "expired", "priority": "high", "due_date": c["end_date"],
+                             "title": "Contract has expired",
+                             "detail": "Renew, replace or archive it. Still being billed? Mark it so the portfolio "
+                                       "review includes it."})
         elif dtn is not None and 0 <= dtn <= 30:
             verb = "renew or raise price" if c["line_type"] == "revenue" else "renegotiate, switch or cancel"
             acts.append({**base, "type": "notice_deadline", "priority": "high" if dtn <= 14 else "medium",
@@ -593,8 +624,10 @@ def _actions(contracts: list[dict]) -> list[dict]:
 def overview(user: dict = Depends(current_user)):
     cs = _list_contracts(user["id"])
     live = [c for c in cs if c["status"] != "expired"]
-    exp = [c for c in live if c["line_type"] == "expense"]
-    rev = [c for c in live if c["line_type"] == "revenue"]
+    # expired contracts that are still being paid are real money, so count them in the totals
+    paid = [c for c in cs if c["status"] != "expired" or c["still_paying"]]
+    exp = [c for c in paid if c["line_type"] == "expense"]
+    rev = [c for c in paid if c["line_type"] == "revenue"]
 
     def within(n):
         return len([c for c in live if c["days_to_end"] is not None and c["days_to_end"] <= n])
@@ -634,9 +667,17 @@ def overview(user: dict = Depends(current_user)):
 # ------------------------------------------------------------------ portfolio review
 
 
+def _in_review(c: dict) -> bool:
+    """Active contracts, plus recently expired ones the business is still paying for (or that auto-renewed)."""
+    if c["status"] != "expired":
+        return True
+    recent = c["days_to_end"] is not None and c["days_to_end"] >= -config.RECENTLY_EXPIRED_DAYS
+    return recent and (c["still_paying"] or c["auto_renew"])
+
+
 @app.post("/api/portfolio/review")
 async def portfolio_review(user: dict = Depends(current_user)):
-    cs = [c for c in _list_contracts(user["id"]) if c["status"] != "expired"]
+    cs = [c for c in _list_contracts(user["id"]) if _in_review(c)]
     if len(cs) < 2:
         raise HTTPException(400, "Add at least two active contracts to run a portfolio review.")
     try:
@@ -648,7 +689,8 @@ async def portfolio_review(user: dict = Depends(current_user)):
                      (user["id"], json.dumps(result), source))
     audit.record("portfolio_review", user["id"], source=source, findings=len(result["findings"]),
                  savings=result["total_estimated_savings"])
-    return {"result": result, "source": source, "created_at": datetime.now(timezone.utc).isoformat()}
+    return {"result": result, "source": source, "created_at": datetime.now(timezone.utc).isoformat(),
+            "included_expired": [c["id"] for c in cs if c["status"] == "expired"]}
 
 
 @app.get("/api/portfolio/latest")

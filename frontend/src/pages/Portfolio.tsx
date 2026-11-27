@@ -43,7 +43,11 @@ export default function Portfolio() {
   }
 
   const byId = new Map(contracts.map((c) => [c.id, c]))
-  const active = contracts.filter((c) => c.status !== 'expired')
+  const RECENT_DAYS = 180 // keep in sync with RECENTLY_EXPIRED_DAYS in backend config
+  const stillPaid = contracts.filter(
+    (c) => c.status === 'expired' && (c.still_paying || c.auto_renew) && (c.days_to_end ?? -9999) >= -RECENT_DAYS,
+  )
+  const active = [...contracts.filter((c) => c.status !== 'expired'), ...stillPaid]
   const vendors = new Set(active.filter((c) => c.line_type === 'expense').map((c) => c.counterparty)).size
   const categories = new Set(active.filter((c) => c.line_type === 'expense').map((c) => c.category)).size
 
@@ -64,12 +68,17 @@ export default function Portfolio() {
       ) : (
         <>
           <div className="metrics metrics-4">
-            <Metric label="Active contracts" value={active.length} icon={<Layers size={18} />} />
+            <Metric label="Contracts reviewed" value={active.length} sub={stillPaid.length ? `incl. ${stillPaid.length} expired, still paid` : 'active contracts'} icon={<Layers size={18} />} />
             <Metric label="Expense vendors" value={vendors} sub={`${categories} spend categories`} />
             <Metric label="Opportunities found" value={review?.result.findings.length ?? '—'} />
             <Metric label="Estimated savings" value={review ? money(review.result.total_estimated_savings) : '—'} sub="per year" icon={<PiggyBank size={18} />} tone="accent" />
           </div>
 
+          {stillPaid.length > 0 && (
+            <div className="alert alert-info">
+              Includes {stillPaid.length} recently expired contract{stillPaid.length > 1 ? 's' : ''} you're still paying for: {stillPaid.map((c) => c.counterparty).join(', ')}.
+            </div>
+          )}
           {!review ? (
             <div className="card muted">No review yet. {active.length < 2 ? 'Add at least two active contracts, then run' : 'Run'} a portfolio review to see recommendations.</div>
           ) : (

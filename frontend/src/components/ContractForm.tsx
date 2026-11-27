@@ -12,6 +12,7 @@ export const BLANK: ContractInput = {
   end_date: null,
   notice_days: 30,
   auto_renew: false,
+  still_paying: false,
   owner: '',
   scope: '',
   notes: '',
@@ -85,6 +86,9 @@ export default function ContractForm({
         <label>Notice period (days)<input type="number" min={0} max={365} value={c.notice_days} onChange={(e) => set('notice_days', Number(e.target.value))} /></label>
       </div>
       <label className="checkbox"><input type="checkbox" checked={c.auto_renew} onChange={(e) => set('auto_renew', e.target.checked)} /> Renews automatically unless cancelled</label>
+      {c.end_date && c.end_date < new Date().toISOString().slice(0, 10) && (
+        <label className="checkbox"><input type="checkbox" checked={!!c.still_paying} onChange={(e) => set('still_paying', e.target.checked)} /> Expired, but we're still paying for it (included in Portfolio Review)</label>
+      )}
       <label>Scope<textarea rows={2} value={c.scope} onChange={(e) => set('scope', e.target.value)} placeholder="What does this contract cover? (helps the agents find overlaps and better rates)" /></label>
       <label>Notes<textarea rows={2} value={c.notes} onChange={(e) => set('notes', e.target.value)} /></label>
       {extra}

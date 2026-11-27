@@ -345,3 +345,6 @@ optgroup { color: var(--brand-300); }
 .modal-list { list-style: none; padding: 0; margin: 4px 0; display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
 .modal-list li { display: flex; justify-content: space-between; gap: 10px; background: var(--surface-2); padding: 6px 10px; border-radius: 7px; font-size: 0.88rem; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.rate-impact > small.muted { font-size: 0.75rem; margin-top: 2px; }
+.alert.still-paying { justify-content: space-between; align-items: center; }
+.alert.still-paying .btn { flex-shrink: 0; }

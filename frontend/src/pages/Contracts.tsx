@@ -109,6 +109,16 @@ function ContractDetail({ c, onChanged, onDeleted }: { c: Contract; onChanged: (
     }
   }
 
+  const toggleStillPaying = async () => {
+    setError(null)
+    try {
+      await api.setStillPaying(c.id, !c.still_paying)
+      onChanged()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
   const attach = async (file: File | undefined) => {
     if (!file) return
     try {
@@ -174,6 +184,22 @@ function ContractDetail({ c, onChanged, onDeleted }: { c: Contract; onChanged: (
           <div><span>Auto-renew</span><strong>{c.auto_renew ? 'Yes' : 'No'}</strong></div>
           <div><span>Owner</span><strong>{c.owner || '—'}</strong></div>
         </div>
+        {c.status === 'expired' && (
+          <div className="alert alert-info still-paying">
+            <span>
+              {c.line_type === 'revenue'
+                ? c.still_paying
+                  ? 'Marked as still being paid by the client. It counts toward annual revenue and is included in Portfolio Review.'
+                  : 'This contract has expired. Is the client still paying you? Mark it so it counts toward revenue and Portfolio Review includes it.'
+                : c.still_paying
+                  ? 'Marked as still being paid. It counts toward annual expense and is included in Portfolio Review.'
+                  : 'This contract has expired. Still being billed for it? Mark it so it counts toward spend and Portfolio Review checks it for overlaps.'}
+            </span>
+            <button className="btn btn-ghost btn-sm" onClick={toggleStillPaying}>
+              {c.still_paying ? 'No longer paying' : 'Still paying'}
+            </button>
+          </div>
+        )}
         {c.scope && <div className="detail-block"><h4>Scope</h4><p>{c.scope}</p></div>}
         {c.notes && <div className="detail-block"><h4>Notes</h4><p>{c.notes}</p></div>}
         {c.has_file && <div className="muted small"><FileText size={13} /> {c.file_name}</div>}
@@ -195,9 +221,13 @@ function ContractDetail({ c, onChanged, onDeleted }: { c: Contract; onChanged: (
               <div className="rate-impact">
                 <span>{c.line_type === 'revenue' ? 'Potential uplift' : 'Potential savings'}</span>
                 <strong>{money(rc.result.estimated_annual_impact)}<small>/yr</small></strong>
+                {rc.result.runs && rc.result.runs > 1 && (
+                  <small className="muted">median of {rc.result.runs} runs · range {money(rc.result.impact_low)} – {money(rc.result.impact_high)}</small>
+                )}
               </div>
             </div>
             <p>{rc.result.summary}</p>
+            {rc.result.agreement && <p className="small muted">{rc.result.agreement}.</p>}
             {(rc.result.market_low != null || rc.result.market_high != null) && (
               <p className="small">Market range: <strong>{money(rc.result.market_low)} – {money(rc.result.market_high)}</strong> per year · you {c.line_type === 'revenue' ? 'charge' : 'pay'} <strong>{money(c.annual_value)}</strong></p>
             )}

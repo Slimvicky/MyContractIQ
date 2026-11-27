@@ -92,7 +92,7 @@
 
   <h3>What that costs</h3>
   <ul>
-    <li><b>Money.</b> Auto-renewing at an uncompetitive price, paying for two tools that do the same job, and losing volume discounts because spend is split across vendors. In the test data, the agents found <b>$6,870 a year</b> in overlap savings, about 4% of the shop's $166,808 annual contract spend.</li>
+    <li><b>Money.</b> Auto-renewing at an uncompetitive price, paying for two tools that do the same job, and losing volume discounts because spend is split across vendors. In the test data, the portfolio agent found <b>$10,912 a year</b> in overlap savings, about 6% of the $180,080 the shop pays each year (active contracts plus 4 expired ones it is still billed for).</li>
     <li><b>Penalties for missed dates.</b> In the test set, the security contract lapsed into month-to-month billing at $115 instead of $95 a month, an extra $240 a year for doing nothing.</li>
     <li><b>Time.</b> Re-quoting a contract means finding competitors, reading pricing pages and comparing terms. That's realistically 30 minutes or more per contract, so it rarely happens.</li>
     <li><b>Frustration and risk.</b> A lapsed insurance policy or a missed lease-renewal option can cost far more than a price difference.</li>
@@ -140,7 +140,7 @@
   <table>
     <tr><th>Agent</th><th>What it does</th><th>Tools</th><th>Output (validated schema)</th></tr>
     <tr><td><b>Extraction agent</b></td><td>Reads an uploaded contract PDF and fills in the contract record: other party, revenue or expense, category, annual value, dates, notice period, auto-renewal, scope.</td><td>None. It only reads the PDF text it is given.</td><td><code>ContractExtraction</code></td></tr>
-    <tr><td><b>Rate agent</b></td><td>For one contract, searches the web for current market pricing and alternatives, then recommends: switch, renegotiate, renew, raise price (revenue lines) or hold. Estimates the yearly savings or uplift.</td><td><b>OpenAI native web search</b></td><td><code>RateRecommendation</code> (summary, market range, alternatives with URLs, next steps, confidence)</td></tr>
+    <tr><td><b>Rate agent</b></td><td>For one contract, searches the web for current market pricing and alternatives, then recommends: switch, renegotiate, renew, raise price (revenue lines) or hold. Estimates the yearly savings or uplift. <b>Runs 3 times in parallel</b>; the app reports the majority recommendation, the median estimate and the range, and lowers confidence when runs disagree.</td><td><b>OpenAI native web search</b></td><td><code>RateRecommendation</code> (summary, market range, alternatives with URLs, next steps, confidence)</td></tr>
     <tr><td><b>Portfolio agent</b></td><td>Reviews all active contracts together for redundancy, consolidation, scale leverage, under-priced revenue and risk.</td><td>None. It works only from the contract data.</td><td><code>PortfolioReview</code> (findings, each tied to real contract IDs)</td></tr>
   </table>
 
@@ -214,7 +214,7 @@ Search the web for current market rates and recommend.</pre></li>
   <h3>What the owner sees</h3>
   <div class="two">
   <figure><img src="img/08_recommendations.jpg" alt="Recommendations" /><figcaption>Figure 3. All 7 rate recommendations, ranked by estimated yearly impact (total $5,232 a year). The cards say when the agent isn't sure: the FedEx card reports low confidence and recommends benchmarking before switching.</figcaption></figure>
-  <figure><img src="img/10_portfolio_review.jpg" alt="Portfolio review" /><figcaption>Figure 4. Portfolio review (live, 12 seconds, $0.001). It found 5 opportunities worth $6,870 a year: overlapping email tools (Mailchimp and Klaviyo, plus Shopify's built-in email), Square vs. Shopify POS, combined volume across two art-supply wholesalers, UPS vs. FedEx, and an under-priced library workshop contract. It caught <b>all 4 planted overlaps</b> in which both contracts were active.</figcaption></figure>
+  <figure><img src="img/10_portfolio_review.jpg" alt="Portfolio review" /><figcaption>Figure 4. Portfolio review (live, 12 seconds, $0.001). It found 5 opportunities worth $6,870 a year: overlapping email tools (Mailchimp and Klaviyo, plus Shopify's built-in email), Square vs. Shopify POS, combined volume across two art-supply wholesalers, UPS vs. FedEx, and an under-priced library workshop contract. It caught <b>all 4 planted overlaps</b> in which both contracts were active. <b>Update:</b> after expired contracts still being paid were included (Section 8), a re-run found <b>all 7 of 7</b> planted overlaps and $10,912 a year, adding Shopify vs. Wix, in-house vs. outsourced framing, the two insurance policies and ADT's holdover pricing.</figcaption></figure>
   </div>
 </section>
 
@@ -228,6 +228,7 @@ Search the web for current market rates and recommend.</pre></li>
     <tr><td>Extraction (20 PDFs)</td><td class="n">897</td><td class="n">0</td><td class="n">132</td><td class="n">0</td><td class="n">$0.00016</td></tr>
     <tr><td>Rate agent (7 runs from the Overview)</td><td class="n">22,563</td><td class="n">4,739</td><td class="n">1,580</td><td class="n">2.14</td><td class="n">$0.0241</td></tr>
     <tr><td>Rate agent (all 16 runs today)</td><td class="n">19,445</td><td class="n">4,443</td><td class="n">1,495</td><td class="n">1.75</td><td class="n">$0.011–$0.044</td></tr>
+    <tr><td><b>Rate check, 3 runs combined</b> (Square, Klaviyo, Jerry's; 9 runs)</td><td class="n">22,078</td><td class="n">4,305</td><td class="n">1,476</td><td class="n">2.11</td><td class="n"><b>$0.071 per check</b></td></tr>
     <tr><td>Portfolio review (1 run, 15 contracts)</td><td class="n">1,854</td><td class="n">0</td><td class="n">1,578</td><td class="n">0</td><td class="n">$0.00097</td></tr>
   </table>
   <p class="small">Prices: gpt-6-luna $0.10 per million input tokens, $0.01 cached, $0.50 output; web search $10 per 1,000 calls. (<a href="https://pricepertoken.com/pricing-page/model/openai-gpt-6-luna">model pricing</a>, <a href="https://developers.openai.com/api/docs/pricing">OpenAI tool pricing</a>)</p>
@@ -236,20 +237,20 @@ Search the web for current market rates and recommend.</pre></li>
 
   <h3>Cost of one full analysis, per business, at scale</h3>
   <div class="kpis">
-    <div class="kpi"><b>$0.17</b><span>Full Art Shopee analysis: 20 extractions + 7 rate checks + 1 portfolio review</span></div>
-    <div class="kpi"><b>≈ $0.10</b><span>Per business per month, typical (25 contracts)</span></div>
-    <div class="kpi"><b>≈ $1.22</b><span>Per business per month, heavy (50 contracts, all re-checked monthly)</span></div>
-    <div class="kpi"><b>≈ $19</b><span>Hard ceiling per business per month (600k-token daily cap ≈ 26 rate checks a day)</span></div>
+    <div class="kpi"><b>$0.50</b><span>Full Art Shopee analysis: 20 extractions + 7 rate checks (3 runs each) + 1 portfolio review</span></div>
+    <div class="kpi"><b>≈ $0.29</b><span>Per business per month, typical (25 contracts)</span></div>
+    <div class="kpi"><b>≈ $3.57</b><span>Per business per month, heavy (50 contracts, all re-checked monthly)</span></div>
+    <div class="kpi"><b>≈ $21</b><span>Hard ceiling per business per month (700k-token daily cap ≈ 10 rate checks a day)</span></div>
   </div>
-  <p class="small">Typical month (estimate): each contract is rate-checked automatically once a year (25 ÷ 12 ≈ 2 runs), plus about 2 manual re-checks → 4 × $0.024 = $0.096; 4 portfolio reviews = $0.004; a couple of new uploads ≈ $0.0003. One-time onboarding of 25 PDFs = $0.004.</p>
+  <p class="small">Typical month (estimate): each contract is rate-checked automatically once a year (25 ÷ 12 ≈ 2 runs), plus about 2 manual re-checks → 4 checks × $0.071 (3 runs each) = $0.284; 4 portfolio reviews = $0.006; a couple of new uploads ≈ $0.0003. One-time onboarding of 25 PDFs = $0.004.</p>
 
   <table>
     <tr><th>Businesses</th><th class="n">AI cost / month (typical)</th><th class="n">AI cost / month (heavy)</th><th class="n">Revenue at $24 / month</th><th class="n">AI cost as % of revenue</th></tr>
-    <tr><td>1</td><td class="n">$0.10</td><td class="n">$1.22</td><td class="n">$24</td><td class="n">0.4%–5%</td></tr>
-    <tr><td>100</td><td class="n">$10</td><td class="n">$122</td><td class="n">$2,400</td><td class="n">0.4%–5%</td></tr>
-    <tr><td>10,000</td><td class="n">$1,000</td><td class="n">$12,200</td><td class="n">$240,000</td><td class="n">0.4%–5%</td></tr>
+    <tr><td>1</td><td class="n">$0.29</td><td class="n">$3.57</td><td class="n">$24</td><td class="n">1.2%–15%</td></tr>
+    <tr><td>100</td><td class="n">$29</td><td class="n">$357</td><td class="n">$2,400</td><td class="n">1.2%–15%</td></tr>
+    <tr><td>10,000</td><td class="n">$2,900</td><td class="n">$35,700</td><td class="n">$240,000</td><td class="n">1.2%–15%</td></tr>
   </table>
-  <p class="small">Hosting, storage and email are not included. The global daily token cap (10 million) must be raised as users grow; at 10,000 businesses it should be roughly 50 million.</p>
+  <p class="small">Hosting, storage and email are not included. The global daily token cap (10 million) must be raised as users grow; at 10,000 businesses it should be roughly 150 million. Running each rate check 3 times roughly triples the AI cost; it is still about 1% of revenue for a typical business, and the number of runs is a setting (<code>RATE_CHECK_RUNS</code>) that can drop to 1 for heavy users.</p>
 
   <h3>What I did to keep cost down</h3>
   <ol>
@@ -273,7 +274,7 @@ Search the web for current market rates and recommend.</pre></li>
     <tr><td>high</td><td class="n">$0.030</td><td class="n">2.67</td><td class="n">26,770</td><td class="n">5</td><td>No better than medium, 56% more expensive</td></tr>
   </table>
   <p><b>Finding:</b> the cheaper setting was <i>not</i> cheaper. The model searched more to make up for less context per search, and it produced one unsupported savings figure. So that cost cut would have made the app worse. I kept <b>medium</b>. The real savings come from running the agent less often (the 60-day window and cache), not from making each run shallower.</p>
-  <div class="callout warn"><b>Second, honest finding: estimates vary from run to run.</b> Across 4 runs, the estimate for Jerry's Artarama ranged from $0 to $1,692. That's why every recommendation shows a confidence level and source links, and why the next steps always say to get real quotes before acting. A planned fix is to run each check 3 times and report the median (Section 8).</div>
+  <div class="callout warn"><b>Second, honest finding: estimates vary from run to run.</b> Across 4 runs, the estimate for Jerry's Artarama ranged from $0 to $1,692. That's why every recommendation shows a confidence level and source links, and why the next steps always say to get real quotes before acting. <b>Now built:</b> every check runs 3 times and reports the median and range. On a re-test, Jerry's median was $0 with a range of $0–$660, so the app shows low confidence instead of one confident-looking number. Square's 3 runs all agreed on $1,692.</div>
 
   <h3>The 60-day window: a cost cut with a known trade-off</h3>
   <p>Limiting checks to the 60 days before renewal is the biggest saving, but it's too late for contracts with long notice periods. Art Shopee's storefront lease needs <b>180 days</b> of notice to use its renewal option, so a check at 60 days would come after the deadline. The Overview still flags the notice deadline as an action, but the rate check should start earlier for these contracts (Section 8).</p>
@@ -288,7 +289,7 @@ Search the web for current market rates and recommend.</pre></li>
     <tr><td><b>Data leaks</b></td><td>One business sees another's contracts or PDFs, or passwords get stolen.</td><td>Every query is filtered by the logged-in user. Passwords are salted and hashed with scrypt. Session tokens are stored only as hashes. PDFs are served only to their owner. The calendar feed uses a private token, also stored hashed. API keys stay in <code>.env</code>, which isn't in git.</td><td class="ok">Yes</td></tr>
     <tr><td><b>Invented facts</b></td><td>The agent records the wrong party or amount, or recommends a switch based on a made-up price.</td><td>Typed schemas; confidence labels; source URLs; contract IDs the agent invents are dropped; unreadable fields are flagged “Needs review”; the agent recommends, and only the owner acts.</td><td class="ok">Yes, found and fixed real errors</td></tr>
     <tr><td><b>Loops and hangs</b></td><td>The agent calls tools forever or stalls.</td><td>Each run is limited to 10 model calls, 150,000 tokens and 120 seconds; at most 2 retries, and none after a limit is hit.</td><td class="ok">Yes</td></tr>
-    <tr><td><b>Overspending</b></td><td>A bug, a script or a bad actor burns the token budget.</td><td>Per-business daily caps (80 runs, 600,000 tokens), an app-wide daily cap (10 million tokens), at most 50 files per upload, 15 MB per file, PDF-only uploads. Blocked runs are logged.</td><td class="ok">Yes</td></tr>
+    <tr><td><b>Overspending</b></td><td>A bug, a script or a bad actor burns the token budget.</td><td>Per-business daily caps (80 runs, 700,000 tokens), an app-wide daily cap (10 million tokens), at most 50 files per upload, 15 MB per file, PDF-only uploads. Blocked runs are logged.</td><td class="ok">Yes</td></tr>
     <tr><td><b>Covering tracks</b></td><td>Someone edits the history of who did what.</td><td>An append-only audit trail where each entry contains the hash of the one before it.</td><td class="ok">Yes</td></tr>
   </table>
 
@@ -340,17 +341,17 @@ Search the web for current market rates and recommend.</pre></li>
   <p><b>Where these numbers come from:</b> my own end-to-end test on the 20 Art Shopee contracts (fictional, written to resemble a real art shop), plus clearly labelled estimates. No real business has used the app yet; Section 8 covers the plan for that.</p>
 
   <div class="kpis">
-    <div class="kpi"><b>$6,870 / yr</b><span>Overlap savings found by the portfolio agent (4.1% of $166,808 in active contract spend)</span></div>
-    <div class="kpi"><b>$5,232 / yr</b><span>Savings found by the rate agent on the 7 contracts renewing within 60 days</span></div>
+    <div class="kpi"><b>$10,912 / yr</b><span>Overlap savings found by the portfolio agent (6.1% of $180,080 in spend still being paid)</span></div>
+    <div class="kpi"><b>$5,232 / yr</b><span>Savings found by the rate agent on the 7 contracts renewing within 60 days (single-run estimates)</span></div>
     <div class="kpi"><b>12 deadlines</b><span>Surfaced automatically: 5 expired contracts and 7 renewals within 60 days</span></div>
-    <div class="kpi"><b>$0.17</b><span>AI cost to produce all of the above</span></div>
+    <div class="kpi"><b>$0.17</b><span>AI cost to produce all of the above (about $0.50 with 3-run rate checks)</span></div>
   </div>
 
   <table>
     <tr><th>Measure</th><th>Without MyContractIQ</th><th>With MyContractIQ</th><th>Source</th></tr>
     <tr><td>Entering 20 contracts</td><td>~100 min (≈5 min each, estimate)</td><td><b>About 40 seconds</b>; 100% accurate on key fields after the fix in Section 6</td><td>Test run</td></tr>
     <tr><td>Re-quoting 7 renewals</td><td>~3.5 hours (≈30 min each, estimate)</td><td><b>~50 seconds</b>, with source links</td><td>Test run</td></tr>
-    <tr><td>Finding overlap across 15 active contracts</td><td>Rarely done; no one sees all contracts at once</td><td><b>12 seconds</b>; caught 4 of the 4 planted overlaps between active contracts</td><td>Test run</td></tr>
+    <tr><td>Finding overlap across 15 active contracts</td><td>Rarely done; no one sees all contracts at once</td><td><b>12 seconds</b>; caught all 7 planted overlaps, including 3 that involve expired contracts still being paid</td><td>Test run</td></tr>
     <tr><td>Missed renewal deadlines</td><td>Found when the bill arrives (e.g. ADT +$240 a year in holdover pricing)</td><td>On the Overview and in the owner's calendar, with reminders</td><td>Test data</td></tr>
   </table>
 
@@ -370,9 +371,9 @@ Search the web for current market rates and recommend.</pre></li>
     <li><b>Storage is a single SQLite file.</b> The app runs on a paid Render instance. Render's filesystem is temporary on every plan, so the database, uploaded PDFs and audit trail are stored on a Render persistent disk (set with <code>DATA_DIR</code>) to survive redeploys. A disk ties the app to one server, so scaling to many customers means moving to managed Postgres and cloud file storage.</li>
     <li><b>Billing isn't built.</b> The $24-a-month plan and 30-day trial are the business model, not yet a Stripe integration.</li>
     <li><b>Welcome emails aren't sent.</b> They're generated and saved to an outbox; SMTP isn't configured.</li>
-    <li><b>Rate estimates vary from run to run</b> (Jerry's: $0 to $1,692 across 4 runs).</li>
+    <li><b>Rate estimates still vary from run to run.</b> The app now runs each check 3 times and shows the median and range (Jerry's: $0, range $0–$660), which triples the rate-check cost. A wide range still means "get real quotes".</li>
     <li><b>The 60-day window is too late for long-notice contracts</b> (the 180-day lease).</li>
-    <li><b>Portfolio review ignores expired contracts</b>, so it missed 3 of the 7 planted overlaps (Shopify vs. Wix, in-house vs. outsourced framing, and the two insurance policies), where one side had lapsed but might still be in use.</li>
+    <li><b>"Still being paid" is marked by hand.</b> Portfolio review now includes contracts that expired in the last 180 days if the owner marks them as still being paid (or they auto-renew). With 4 marked, it found all 7 planted overlaps instead of 4. The app can't yet see the bills itself.</li>
     <li><b>Scanned PDFs</b> (images with no text layer) can't be read; there's no OCR yet.</li>
     <li>One login per business. No team roles, e-signature or contract drafting.</li>
   </ul>
@@ -383,9 +384,7 @@ Search the web for current market rates and recommend.</pre></li>
     <li><b>Production data layer:</b> Postgres and object storage for PDFs, so nothing is lost on redeploy; daily backups.</li>
     <li><b>Stripe billing</b> with the 30-day free trial and $24-a-month plan, plus email reminders (SMTP) on top of the calendar.</li>
     <li><b>Deadline-aware trigger:</b> start the rate check at the later of 60 days or the notice period + 30 days before renewal.</li>
-    <li><b>Stable estimates:</b> run each rate check 3 times and report the median and range. That costs about 3× (still under $0.10 per check) and removes the single-run noise.</li>
-    <li><b>Include recently expired contracts</b> in portfolio review when they're still being paid month-to-month.</li>
-    <li><b>OCR</b> for scanned contracts, and an <b>accounting integration</b> (e.g. QuickBooks) that spots recurring payments with no contract on file.</li>
+    <li><b>OCR</b> for scanned contracts, and an <b>accounting integration</b> (e.g. QuickBooks) that spots recurring payments with no contract on file and marks expired contracts as still being paid automatically.</li>
   </ol>
 </section>
 

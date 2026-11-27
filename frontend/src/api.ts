@@ -37,6 +37,11 @@ export interface RateResult {
   estimated_annual_impact: number
   alternatives: Alternative[]
   next_steps: string[]
+  /** Set when several independent agent runs were combined (median + range). */
+  runs?: number
+  impact_low?: number | null
+  impact_high?: number | null
+  agreement?: string | null
 }
 
 export interface RateCheck {
@@ -57,6 +62,8 @@ export interface ContractInput {
   end_date: string | null
   notice_days: number
   auto_renew: boolean
+  /** Expired but still being billed (holdover / month-to-month). Included in portfolio review. */
+  still_paying: boolean
   owner: string
   scope: string
   notes: string
@@ -138,6 +145,7 @@ export interface PortfolioReview {
   result: { headline: string; total_estimated_savings: number; findings: Finding[] }
   source: string
   created_at: string
+  included_expired?: number[]
 }
 
 export interface Meta {
@@ -222,6 +230,8 @@ export const api = {
   createContract: (c: ContractInput) => json<Contract>('/contracts', { method: 'POST', body: JSON.stringify(c) }),
   updateContract: (id: number, c: ContractInput) =>
     json<Contract>(`/contracts/${id}`, { method: 'PUT', body: JSON.stringify(c) }),
+  setStillPaying: (id: number, still_paying: boolean) =>
+    json<Contract>(`/contracts/${id}/still-paying`, { method: 'POST', body: JSON.stringify({ still_paying }) }),
   deleteContract: (id: number) => json(`/contracts/${id}`, { method: 'DELETE' }),
   attachFile: (id: number, file: File) => {
     const fd = new FormData()
